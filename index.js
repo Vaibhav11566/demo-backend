@@ -1,9 +1,12 @@
 const express = require("express");
 const mysql = require("mysql2");
 require("dotenv").config();
-
+const { connectRabbitMQ, publishToQueue } = require("./rabbit/rabbit");
 const app = express();
 app.use(express.json());
+
+// ✅ Connect RabbitMQ
+connectRabbitMQ();
 
 const db = mysql.createConnection({
   host: process.env.DB_HOST,
@@ -20,6 +23,7 @@ app.get("/users", (req, res) => {
   });
 });
 
+// ADD user + send event to RabbitMQ
 app.post("/users", (req, res) => {
   const { name, email, password } = req.body;
   db.query(
@@ -27,9 +31,16 @@ app.post("/users", (req, res) => {
     [name, email, password],
     (err, result) => {
       if (err) return res.status(500).json({ error: err });
-      res.json({ id: result.insertId, name, email });
+
+      const user = { id: result.insertId, name, email };
+
+      // ✅ publish user_created event to RabbitMQ
+      publishToQueue({ event: "user_created", data: user });
+
+      res.json(user);
     }
   );
 });
+
 
 app.listen(3000, () => console.log("Server running on port 3000"));
